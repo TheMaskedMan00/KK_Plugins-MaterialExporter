@@ -262,3 +262,7 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+/src/DPS.KKS
+/src/TestPlugin.KKS/Exporter
+/src/TestPlugin.KKS/FBX
+/src/TestPlugin.KKS/TimeLine
