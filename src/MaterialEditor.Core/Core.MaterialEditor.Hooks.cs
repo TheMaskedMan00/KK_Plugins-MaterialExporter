@@ -3,6 +3,7 @@ using KKAPI.Maker;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using KKAPI.Utilities;
 using UniRx;
@@ -48,59 +49,91 @@ namespace KK_Plugins.MaterialEditor
                 GetBodyRendererList(gameObject.transform.GetChild(i).gameObject, rendList);
         }
 
+        private static readonly Dictionary<GameObject, List<Renderer>> _RendererLookup = new Dictionary<GameObject, List<Renderer>>();
         [HarmonyPrefix, HarmonyPatch(typeof(MaterialEditorAPI.MaterialAPI), nameof(MaterialEditorAPI.MaterialAPI.GetRendererList))]
         private static bool MaterialAPI_GetRendererList(ref IEnumerable<Renderer> __result, GameObject gameObject)
         {
             if (gameObject == null)
                 return true;
 
-            //For ChaControl objects, return only specific renderes (i.e. not clothes, hair, etc.)
-            var chaControl = gameObject.GetComponent<ChaControl>();
-            if (chaControl)
+            if (_RendererLookup.TryGetValue(gameObject, out var cached))
             {
-                List<Renderer> rendList = new List<Renderer>();
-                GetBodyRendererList(chaControl.gameObject, rendList);
-                __result = rendList;
-                return false;
+                if (cached.All(r => r != null))
+                {
+                    __result = cached;
+                    return false;
+                }
+                else
+                {
+                    // Invalidate cache if any objects got removed. This might not catch all cases but should be close enough.
+                    _RendererLookup.Remove(gameObject);
+                    foreach (var destroyed in _RendererLookup.Keys.Where(key => !key).ToList())
+                        _RendererLookup.Remove(destroyed);
+                }
             }
 
-#if !PH
-            //If this is an ItemComponent return only the renderers in the arrays, otherwise child objects will show in the UI
-            var itemComponent = gameObject.GetComponent<ItemComponent>();
-            if (itemComponent)
+            var sw = Stopwatch.StartNew();
+            try
             {
-                List<Renderer> rendList = new List<Renderer>();
+                //For ChaControl objects, return only specific renderes (i.e. not clothes, hair, etc.)
+                var chaControl = gameObject.GetComponent<ChaControl>();
+                if (chaControl)
+                {
+                    List<Renderer> rendList = new List<Renderer>();
+                    GetBodyRendererList(chaControl.gameObject, rendList);
+                    __result = rendList;
+                    if (rendList.Count > 0)
+                        _RendererLookup[gameObject] = rendList;
+                    return false;
+                }
+
+#if !PH
+                //If this is an ItemComponent return only the renderers in the arrays, otherwise child objects will show in the UI
+                var itemComponent = gameObject.GetComponent<ItemComponent>();
+                if (itemComponent)
+                {
+                    List<Renderer> rendList = new List<Renderer>();
 
 #if KK || KKS
-                for (int i = 0; i < itemComponent.rendNormal.Length; i++)
-                    if (itemComponent.rendNormal[i] && !rendList.Contains(itemComponent.rendNormal[i]))
-                        rendList.Add(itemComponent.rendNormal[i]);
-                for (int i = 0; i < itemComponent.rendAlpha.Length; i++)
-                    if (itemComponent.rendAlpha[i] && !rendList.Contains(itemComponent.rendAlpha[i]))
-                        rendList.Add(itemComponent.rendAlpha[i]);
-                for (int i = 0; i < itemComponent.rendGlass.Length; i++)
-                    if (itemComponent.rendGlass[i] && !rendList.Contains(itemComponent.rendGlass[i]))
-                        rendList.Add(itemComponent.rendGlass[i]);
+                    for (int i = 0; i < itemComponent.rendNormal.Length; i++)
+                        if (itemComponent.rendNormal[i] && !rendList.Contains(itemComponent.rendNormal[i]))
+                            rendList.Add(itemComponent.rendNormal[i]);
+                    for (int i = 0; i < itemComponent.rendAlpha.Length; i++)
+                        if (itemComponent.rendAlpha[i] && !rendList.Contains(itemComponent.rendAlpha[i]))
+                            rendList.Add(itemComponent.rendAlpha[i]);
+                    for (int i = 0; i < itemComponent.rendGlass.Length; i++)
+                        if (itemComponent.rendGlass[i] && !rendList.Contains(itemComponent.rendGlass[i]))
+                            rendList.Add(itemComponent.rendGlass[i]);
 #elif EC
                 for (int i = 0; i < itemComponent.renderers.Length; i++)
                     if (itemComponent.renderers[i] && !rendList.Contains(itemComponent.renderers[i]))
                         rendList.Add(itemComponent.renderers[i]);
 #else
-                for (int i = 0; i < itemComponent.rendererInfos.Length; i++)
-                    if (itemComponent.rendererInfos[i].renderer && !rendList.Contains(itemComponent.rendererInfos[i].renderer))
-                        rendList.Add(itemComponent.rendererInfos[i].renderer);
-                for (int i = 0; i < itemComponent.renderersSea.Length; i++)
-                    if (itemComponent.renderersSea[i] && !rendList.Contains(itemComponent.renderersSea[i]))
-                        rendList.Add(itemComponent.renderersSea[i]);
+                    for (int i = 0; i < itemComponent.rendererInfos.Length; i++)
+                        if (itemComponent.rendererInfos[i].renderer && !rendList.Contains(itemComponent.rendererInfos[i].renderer))
+                            rendList.Add(itemComponent.rendererInfos[i].renderer);
+                    for (int i = 0; i < itemComponent.renderersSea.Length; i++)
+                        if (itemComponent.renderersSea[i] && !rendList.Contains(itemComponent.renderersSea[i]))
+                            rendList.Add(itemComponent.renderersSea[i]);
 #endif
-                if (rendList.Count > 0)
-                {
-                    __result = rendList;
-                    return false;
+                    if (rendList.Count > 0)
+                    {
+                        __result = rendList;
+                        _RendererLookup[gameObject] = rendList;
+                        return false;
+                    }
                 }
-            }
 #endif
-
+            }
+            catch (Exception ex)
+            {
+                MaterialEditorPlugin.Logger.LogError("Failed to get filtered renderers, falling back to getting all renderers. Cause: " + ex);
+            }
+            finally
+            {
+                if (sw.ElapsedMilliseconds > 0)
+                    MaterialEditorPlugin.Logger.LogDebug($"MaterialAPI_GetRendererList took {sw.ElapsedMilliseconds}ms to finish for {gameObject.name} with {(__result as ICollection)?.Count ?? 0} results.");
+            }
             return true;
         }
 
@@ -276,9 +309,13 @@ namespace KK_Plugins.MaterialEditor
         }
 
         [HarmonyPostfix]
-        // bug? async postfix doesn't actually run after method finishes but before
         [HarmonyPatch(typeof(ChaControl), nameof(ChaControl.ChangeHairAsync), typeof(int), typeof(int), typeof(bool), typeof(bool))]
+        private static void ChangeHair(ChaControl __instance, int kind, ref IEnumerator __result)
+        {
+            __result = __result.AppendCo(() => ChangeHair(__instance, kind));
+        }
 #if KKS
+        [HarmonyPostfix]
         [HarmonyPatch(typeof(ChaControl), nameof(ChaControl.ChangeHairNoAsync), typeof(int), typeof(int), typeof(bool))]
 #endif
         private static void ChangeHair(ChaControl __instance, int kind)

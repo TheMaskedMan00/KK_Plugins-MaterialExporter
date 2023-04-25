@@ -13,7 +13,7 @@ namespace KK_Plugins
         public const string GUID = "com.deathweasel.bepinex.lightingtweaks";
         public const string PluginName = "Lighting Tweaks";
         public const string PluginNameInternal = "KK_LightingTweaks";
-        public const string Version = "1.0.1";
+        public const string Version = "1.1";
         internal static new ManualLogSource Logger;
 
         internal void Main()
@@ -32,10 +32,16 @@ namespace KK_Plugins
                 {
                     if (light.name == "Directional Chara")
                     {
+                        //Beter quality shadows
                         light.shadowCustomResolution = 10000;
                         light.shadowBias = 0.0075f;
-                        light.shadowStrength = 1; //Studio shadow strength is different from main game for some reason
+
+                        //Studio shadow strength is different from main game for some reason
+                        light.shadowStrength = 1;
                     }
+
+                    //Allows multiple lights to affect objects with Vanilla Plus shaders
+                    light.renderMode = LightRenderMode.ForcePixel;
                 }
                 else
                 {

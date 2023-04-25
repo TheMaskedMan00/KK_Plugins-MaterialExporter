@@ -35,7 +35,7 @@ namespace KK_Plugins
         public const string GUID = "com.deathweasel.bepinex.uncensorselector";
         public const string PluginName = "Uncensor Selector";
         public const string PluginNameInternal = "KK_UncensorSelector";
-        public const string Version = "3.11.5";
+        public const string Version = "3.11.7";
         internal static new ManualLogSource Logger;
         private static readonly HashSet<string> AllAdditionalParts = new HashSet<string>();
         public static readonly Dictionary<string, BodyData> BodyDictionary = new Dictionary<string, BodyData>();
@@ -315,9 +315,7 @@ namespace KK_Plugins
 #endif
 
 #if AI || HS2
-            if (characterSex == 0)
-                BodyDropdown.Visible.OnNext(false);
-            else
+            if (characterSex != 0)
                 TogglePenisBallsUI(false);
 #endif
 
@@ -417,11 +415,9 @@ namespace KK_Plugins
             //Add the default body options
             BodyConfigListFull["Random"] = "Random";
 
-#if KK || EC || KKS
             BodyData DefaultMale = new BodyData(0, DefaultBodyMaleGUID, "Default Body M");
             BodyDictionary[DefaultMale.BodyGUID] = DefaultMale;
             BodyConfigListFull[$"[{(DefaultMale.Sex == 0 ? "Male" : "Female")}] {DefaultMale.DisplayName}"] = DefaultMale.BodyGUID;
-#endif
 
             BodyData DefaultFemale = new BodyData(1, DefaultBodyFemaleGUID, "Default Body F");
             BodyDictionary[DefaultFemale.BodyGUID] = DefaultFemale;
